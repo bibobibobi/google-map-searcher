@@ -177,6 +177,10 @@ def handle_message(event):
                 print(e)
         else:
             reply_text = "Threads 網址格式錯誤，找不到代碼。"
+
+    else:
+    # 如果不是 IG 也不是 Threads，直接結束處理 (在群組裡安靜潛水)
+        return
             
 
     # ==========================================
@@ -187,7 +191,7 @@ def handle_message(event):
         google_map_url = f"https://www.google.com/maps/search/?api=1&query={safe_target_name}"
         reply_text += f"\n\n🗺️ 點擊導航：\n{google_map_url}"
     elif reply_text == "":
-        reply_text = "這篇貼文好像沒有寫地址喔！🥲"
+        reply_text = "這篇貼文好像沒有寫地址喔！"
 
     line_bot_api.reply_message(
         event.reply_token,
