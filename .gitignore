@@ -1,0 +1,12 @@
+# 隱藏環境變數與金鑰
+.env
+
+# 隱藏 Python 系統暫存檔
+__pycache__/
+*.pyc
+
+# 隱藏虛擬環境資料夾
+venv/
+env/
+
+ngrok.exe
