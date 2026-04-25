@@ -24,7 +24,7 @@ def extract_location_with_ai(text_content):
     if not text_content or text_content.strip() == "":
         return None
         
-    model = genai.GenerativeModel('gemini-2.5-flash') # 使用你專屬的最新模型
+    model = genai.GenerativeModel('gemini-3.1-flash-lite-preview')
     
     prompt = f"""
     你現在是一個精準的地圖資料萃取器。
