@@ -9,6 +9,56 @@ from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from dotenv import load_dotenv
 
+def get_threads_content(url):
+    """
+    這是一個專屬工具：負責把 Threads 網址變成給 AI 看的純文字情報包
+    """
+    # 1. 用正則表達式抓出乾淨的 thread_code (尋找 post/ 後面的英數字)
+    match = re.search(r'post/([a-zA-Z0-9_-]+)', url)
+    if not match:
+        return None # 如果網址格式不對，就回傳空值
+    
+    thread_code = match.group(1) # 成功拿到乾淨的 DXjRbZbjzJV
+    
+    # 2. 呼叫 RapidAPI
+    api_url = "https://threadsscraper.p.rapidapi.com/thread-comments"
+    querystring = {"thread_code": thread_code, "map_replies": "0"}
+    headers = {
+        "x-rapidapi-key": os.getenv('RAPIDAPI_KEY'),
+        "x-rapidapi-host": "threadsscraper.p.rapidapi.com"
+    }
+    
+    try:
+        response = requests.get(api_url, headers=headers, params=querystring)
+        json_data = response.json()
+        
+        # 3. 整理 JSON (這是我們上一回合討論的邏輯)
+        items = json_data.get('data', [])
+        if not items:
+            return "這篇貼文沒有內容或抓取失敗"
+            
+        main_text = items[0].get('caption', {}).get('text', '無主文')
+        full_content = f"【Threads 主文】\n{main_text}\n\n"
+        
+        # 加入圖片隱藏描述 (如果有)
+        accessibility_caption = items[0].get('accessibility_caption')
+        if accessibility_caption:
+            full_content += f"【圖片隱藏描述】\n{accessibility_caption}\n\n"
+            
+        # 加入留言區
+        full_content += "【留言區】\n"
+        for item in items[1:]:
+            author = item.get('user', {}).get('username', '匿名')
+            comment_text = item.get('caption', {}).get('text', '')
+            if comment_text:
+                full_content += f"- 網友 {author} 說: {comment_text}\n"
+                
+        return full_content # 完美回傳整理好的文字！
+
+    except Exception as e:
+        print(f"Threads 爬蟲發生錯誤: {e}")
+        return None
+
 load_dotenv()
 app = Flask(__name__)
 
@@ -75,29 +125,21 @@ def handle_message(event):
     target_name = None
     
     # ---------------------------
-    # 路線 A：Instagram 處理邏輯
+    # 路線 A：Instagram 處理邏輯 50/month
     # ---------------------------
     if "instagram.com" in user_text:
         match = re.search(r'/(?:p|reel|reels)/([^/?#&]+)', user_text)
         if match:
-            # 這裡我們不需要 shortcode，我們直接把使用者的整串網址傳給 API
-            # 但保險起見，我們只取到 ? 前面的乾淨網址
             clean_url = user_text.split('?')[0] 
-            
-            # 👇 換成 instagram-looter2 的 API 網址
             api_url = "https://instagram-looter2.p.rapidapi.com/post" 
-            
-            # 👇 這家 API 要求的參數是 url
             querystring = {"url": clean_url} 
             
             headers = {
-                "x-rapidapi-key": "f7ce5262dfmsh845803b7a42a4b9p1e0fdajsn97cd25aa76eb",
-                # 👇 換成 instagram-looter2 的 Host
+                "x-rapidapi-key": os.getenv('RAPIDAPI_KEY'), # 共用 .env 裡的金鑰
                 "x-rapidapi-host": "instagram-looter2.p.rapidapi.com", 
                 "Content-Type": "application/json"
             }
             try:
-                # 發送請求
                 response = requests.get(api_url, headers=headers, params=querystring)
                 json_data = response.json()
                 
@@ -127,59 +169,68 @@ def handle_message(event):
             reply_text = "IG 網址格式錯誤，找不到代碼。"
 
     # ---------------------------
-    # 路線 B：Threads 處理邏輯
+    # 路線 B：Threads 升級版處理邏輯 (支援留言與圖片 OCR) 100/month
     # ---------------------------
     elif "threads.net" in user_text or "threads.com" in user_text:
         match = re.search(r'/post/([^/?#&]+)', user_text)
         if match:
-            web_id = match.group(1)
-            api_url = "https://threads-by-meta-threads-an-instagram-app-detailed.p.rapidapi.com/get_post_with_web_id"
-            querystring = {"web_id": web_id}
+            thread_code = match.group(1) # 拿到乾淨的 DXjRbZbjzJV
+            
+            # 👇 換成全新的 thread-comments API
+            api_url = "https://threadsscraper.p.rapidapi.com/thread-comments"
+            querystring = {"thread_code": thread_code, "map_replies": "0"}
+            
             headers = {
-                "x-rapidapi-key": "f7ce5262dfmsh845803b7a42a4b9p1e0fdajsn97cd25aa76eb",
-                "x-rapidapi-host": "threads-by-meta-threads-an-instagram-app-detailed.p.rapidapi.com",
+                "x-rapidapi-key": os.getenv('RAPIDAPI_KEY'), # 共用 .env 裡的金鑰
+                "x-rapidapi-host": "threadsscraper.p.rapidapi.com",
                 "Content-Type": "application/json"
             }
+            
             try:
                 response = requests.get(api_url, headers=headers, params=querystring)
                 json_data = response.json()
+                items = json_data.get('data', [])
                 
-                # 防呆機制：檢查 API 是否回傳錯誤
-                if "error" in json_data or "errors" in json_data:
-                     reply_text = "Threads 爬蟲發生錯誤，API 可能失效。"
-                     print("API Error:", json_data)
+                if not items:
+                    reply_text = "Threads 爬蟲找不到這篇貼文的資料或 API 失效。"
                 else:
-                    post_info = json_data.get('post', {})
+                    # 1. 抓取主文 (陣列的第一筆)
+                    main_post = items[0]
+                    main_text = main_post.get('caption', {}).get('text', '無主文')
                     
-                    # 1. 抓取主要文字內文
-                    caption_text = post_info.get('caption', {}).get('text', '')
+                    # 2. 抓取圖片隱藏描述 (如果有)
+                    ocr_text = main_post.get('accessibility_caption', '')
+                    if ocr_text:
+                        ocr_text = f"【圖片辨識文字】\n{ocr_text}\n\n"
+                    else:
+                        ocr_text = ""
+                        
+                    # 3. 抓取留言區 (陣列的第二筆開始)
+                    comments_text = ""
+                    for item in items[1:]:
+                        author = item.get('user', {}).get('username', '匿名')
+                        comment = item.get('caption', {}).get('text', '')
+                        if comment:
+                            comments_text += f"- {author} 說: {comment}\n"
                     
-                    # 2. 抓取圖片的無障礙說明 (隱藏在 carousel_media 或 image_versions2 裡)
-                    ocr_text = ""
-                    if 'carousel_media' in post_info and post_info['carousel_media']:
-                        for item in post_info['carousel_media']:
-                            if item.get('accessibility_caption'):
-                                ocr_text += item['accessibility_caption'] + " "
-                    elif 'accessibility_caption' in post_info and post_info['accessibility_caption']:
-                         ocr_text = post_info['accessibility_caption']
+                    # 4. 綜合情報大拌炒
+                    combined_info = f"【Threads 主文】\n{main_text}\n\n{ocr_text}【留言區】\n{comments_text}"
+                    print(f"--- 傳給 AI 的綜合情報 ---\n{combined_info}\n-----------------------")
                     
-                    # 3. 綜合情報大拌炒
-                    combined_info = f"內文：{caption_text}\n圖片辨識文字：{ocr_text}"
-                    print(f"--- 傳給 AI 的綜合情報 ---\n{combined_info}\n-----------------------") # 方便你在終端機看抓到了什麼
-                    
-                    # 4. 交給 AI 大腦
+                    # 5. 交給 AI 大腦
                     extracted_place = extract_location_with_ai(combined_info)
                     if extracted_place:
                         target_name = extracted_place
-                        reply_text = f"🤖 AI 從 Threads 綜合情報找到：\n{target_name}"
+                        reply_text = f"🤖 AI 從 Threads (含留言區) 找到：\n{target_name}"
+                        
             except Exception as e:
                 reply_text = "Threads 爬蟲發生網路錯誤。"
-                print(e)
+                print(f"API Error: {e}")
         else:
             reply_text = "Threads 網址格式錯誤，找不到代碼。"
 
     else:
-    # 如果不是 IG 也不是 Threads，直接結束處理 (在群組裡安靜潛水)
+        # 如果不是 IG 也不是 Threads，直接結束處理
         return
             
 
