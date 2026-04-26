@@ -146,9 +146,6 @@ def handle_message(event):
             try:
                 response = requests.get(api_url, headers=headers, params=querystring)
                 json_data = response.json()
-
-                # 👇 加入這行！把 IG 的真實 JSON 印出來
-                print(f"🐛 IG API 回傳真相: {json_data}")
                 
                 # 1. 精準抓取內文
                 caption = ""
@@ -196,10 +193,6 @@ def handle_message(event):
             try:
                 response = requests.get(api_url, headers=headers, params=querystring)
                 json_data = response.json()
-
-                # 👇 加入這行！把 Threads 的真實 JSON 印出來
-                print(f"🐛 Threads API 回傳真相: {json_data}")
-                
                 items = json_data.get('data', [])
                 
                 if not items:
