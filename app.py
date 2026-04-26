@@ -4,9 +4,11 @@ import requests
 import urllib.parse
 import google.generativeai as genai
 from flask import Flask, request, abort
-from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
+from linebot.v3 import WebhookHandler
+from linebot.v3.exceptions import InvalidSignatureError
+from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
+from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from dotenv import load_dotenv
 
 def get_threads_content(url):
@@ -63,7 +65,9 @@ load_dotenv()
 app = Flask(__name__)
 
 # 初始化 LINE Bot 與 Gemini
-line_bot_api = LineBotApi(os.getenv('LINE_CHANNEL_ACCESS_TOKEN'))
+configuration = Configuration(access_token=os.getenv('LINE_CHANNEL_ACCESS_TOKEN'))
+api_client = ApiClient(configuration)
+line_bot_api = MessagingApi(api_client)
 handler = WebhookHandler(os.getenv('LINE_CHANNEL_SECRET'))
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 
@@ -118,7 +122,7 @@ def callback():
 # ==========================================
 # 🤖 處理使用者訊息 (IG & Threads 路由)
 # ==========================================
-@handler.add(MessageEvent, message=TextMessage)
+@handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_text = event.message.text
     reply_text = ""
@@ -245,8 +249,10 @@ def handle_message(event):
         reply_text = "這篇貼文好像沒有寫地址喔！"
 
     line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=reply_text)
+        ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=reply_text)]
+        )
     )
 
 if __name__ == "__main__":
