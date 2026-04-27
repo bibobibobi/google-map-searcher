@@ -113,7 +113,7 @@ def generate_google_maps_link(name, address):
     """
     search_keyword = f"{name} {address}".strip()
     encoded_keyword = urllib.parse.quote(search_keyword)
-    return f"[https://www.google.com/maps/search/?api=1&query=](https://www.google.com/maps/search/?api=1&query=){encoded_keyword}"
+    return f"(https://www.google.com/maps/search/?api=1&query=){encoded_keyword}"
 
 # ==========================================
 # 🌐 LINE Webhook
@@ -143,7 +143,7 @@ def handle_message(event):
         match = re.search(r'/(?:p|reel|reels)/([^/?#&]+)', user_text)
         if match:
             clean_url = user_text.split('?')[0] 
-            api_url = "[https://instagram-looter2.p.rapidapi.com/post](https://instagram-looter2.p.rapidapi.com/post)" 
+            api_url = "(https://instagram-looter2.p.rapidapi.com/post)" 
             querystring = {"url": clean_url} 
             
             headers = {
@@ -195,7 +195,7 @@ def handle_message(event):
         match = re.search(r'/post/([^/?#&]+)', user_text)
         if match:
             thread_code = match.group(1)
-            api_url = "[https://threadsscraper.p.rapidapi.com/thread-comments](https://threadsscraper.p.rapidapi.com/thread-comments)"
+            api_url = "(https://threadsscraper.p.rapidapi.com/thread-comments)"
             querystring = {"thread_code": thread_code, "map_replies": "0"}
             
             headers = {
