@@ -135,6 +135,8 @@ def callback():
 def handle_message(event):
     user_text = event.message.text
     reply_text = ""
+
+    print(f"📥 收到來自使用者的訊息：{user_text}")
     
     # ---------------------------
     # 路線 A：Instagram 處理邏輯
