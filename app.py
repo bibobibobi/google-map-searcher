@@ -74,7 +74,7 @@ def extract_location_with_ai(text_content):
     if not text_content or text_content.strip() == "":
         return None
         
-    model = genai.GenerativeModel('gemini-3.1-flash-lite-preview') 
+    model = genai.GenerativeModel('gemini-3.1-flash-lite') 
     
     prompt = """
     你現在是一個專業的地圖資料萃取器。這篇貼文可能介紹了單一或多間不同的餐廳與景點。
