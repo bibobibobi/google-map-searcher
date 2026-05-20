@@ -54,10 +54,10 @@ def extract_location_with_ai(text_content):
 # 🗺️ 工具函式：產生 Google Maps 搜尋連結
 # ==========================================
 def generate_google_maps_link(name, address):
-    # 使用標準 URL 編碼
+    # 使用標準 URL 編碼，這裡確保是純淨的網址
     search_keyword = f"{name} {address}".strip()
     encoded_keyword = urllib.parse.quote(search_keyword)
-    return f"[https://www.google.com/maps/search/?api=1&query=](https://www.google.com/maps/search/?api=1&query=){encoded_keyword}"
+    return f"https://www.google.com/maps/search/?api=1&query={encoded_keyword}"
 
 # ==========================================
 # 📱 平台處理員 1：Instagram
@@ -68,7 +68,7 @@ def handle_instagram(user_text):
         return "IG 網址格式錯誤，找不到代碼。"
         
     clean_url = user_text.split('?')[0] 
-    api_url = "[https://instagram-looter2.p.rapidapi.com/post](https://instagram-looter2.p.rapidapi.com/post)" 
+    api_url = "https://instagram-looter2.p.rapidapi.com/post" 
     querystring = {"url": clean_url} 
     headers = {
         "x-rapidapi-key": os.getenv('RAPIDAPI_KEY'),
@@ -77,7 +77,8 @@ def handle_instagram(user_text):
     }
     
     try:
-        response = requests.get(api_url, headers=headers, params=querystring)
+        # 加上 timeout 保護
+        response = requests.get(api_url, headers=headers, params=querystring, timeout=10)
         json_data = response.json()
         caption = json_data.get("edge_media_to_caption", {}).get("edges", [{}])[0].get("node", {}).get("text", "")
         extracted_place = extract_location_with_ai(caption)
@@ -87,7 +88,7 @@ def handle_instagram(user_text):
             reply_text = "🤖 AI 為您找到以下地點：\n\n"
             for p in places:
                 maps_url = generate_google_maps_link(p.get("name"), p.get("address"))
-                reply_text += f"🍽️ {p.get('name')}\n📍 {p.get('address')}\n🗺️ 導航：{maps_url}\n\n"
+                reply_text += f"🍽️ {p.get('name')}\n📍 {p.get('address')}\n🗺️ 導航：\n{maps_url}\n\n"
             return reply_text
         return "🤖 貼文好像沒有提到具體實體店面。"
     except Exception as e:
@@ -102,7 +103,7 @@ def handle_threads(user_text):
     if not match:
         return "Threads 網址格式錯誤。"
     
-    api_url = "[https://threadsscraper.p.rapidapi.com/thread-comments](https://threadsscraper.p.rapidapi.com/thread-comments)"
+    api_url = "https://threadsscraper.p.rapidapi.com/thread-comments"
     querystring = {"thread_code": match.group(1), "map_replies": "0"}
     headers = {
         "x-rapidapi-key": os.getenv('RAPIDAPI_KEY'),
@@ -110,7 +111,7 @@ def handle_threads(user_text):
     }
     
     try:
-        response = requests.get(api_url, headers=headers, params=querystring)
+        response = requests.get(api_url, headers=headers, params=querystring, timeout=10)
         items = response.json().get('data', [])
         if not items: return "無法抓取貼文。"
         
@@ -122,7 +123,7 @@ def handle_threads(user_text):
             reply_text = "🤖 AI 為您找到以下地點：\n\n"
             for p in places:
                 maps_url = generate_google_maps_link(p.get("name"), p.get("address"))
-                reply_text += f"🍽️ {p.get('name')}\n🗺️ 導航：{maps_url}\n\n"
+                reply_text += f"🍽️ {p.get('name')}\n🗺️ 導航：\n{maps_url}\n\n"
             return reply_text
         return "🤖 沒有找到實體地點。"
     except Exception as e:
@@ -136,7 +137,7 @@ def handle_facebook(user_text):
     match = re.search(r'(https?://[^\s]+(?:facebook\.com|fb\.com|fb\.watch)[^\s]+)', user_text)
     if not match: return "無效的 FB 網址。"
     
-    api_url = "[https://facebook-scraper-api4.p.rapidapi.com/get_facebook_post_details](https://facebook-scraper-api4.p.rapidapi.com/get_facebook_post_details)" 
+    api_url = "https://facebook-scraper-api4.p.rapidapi.com/get_facebook_post_details" 
     querystring = {"link": match.group(1)} 
     headers = {
         "x-rapidapi-key": os.getenv('RAPIDAPI_KEY'),
@@ -144,8 +145,13 @@ def handle_facebook(user_text):
     }
     
     try:
-        response = requests.get(api_url, headers=headers, params=querystring)
+        response = requests.get(api_url, headers=headers, params=querystring, timeout=10)
         data_list = response.json()
+        
+        # 加入簡單的防錯機制，避免 data_list 抓空導致 [0] 報錯
+        if not data_list or len(data_list) == 0:
+            return "FB 爬蟲找不到這篇貼文資料。"
+            
         fb_text = data_list[0].get('values', {}).get('text', '')
         
         extracted_place = extract_location_with_ai(fb_text)
@@ -154,7 +160,7 @@ def handle_facebook(user_text):
             reply_text = "🤖 AI 找到以下地點：\n\n"
             for p in places:
                 maps_url = generate_google_maps_link(p.get("name"), p.get("address"))
-                reply_text += f"🍽️ {p.get('name')}\n🗺️ 導航：{maps_url}\n\n"
+                reply_text += f"🍽️ {p.get('name')}\n🗺️ 導航：\n{maps_url}\n\n"
             return reply_text
         return "🤖 沒有找到實體地點。"
     except Exception as e:
