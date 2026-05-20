@@ -12,51 +12,6 @@ from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMe
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from dotenv import load_dotenv
 
-def get_threads_content(url):
-    """
-    這是一個專屬工具：負責把 Threads 網址變成給 AI 看的純文字情報包
-    """
-    match = re.search(r'post/([a-zA-Z0-9_-]+)', url)
-    if not match:
-        return None 
-    
-    thread_code = match.group(1) 
-    
-    api_url = "https://threadsscraper.p.rapidapi.com/thread-comments"
-    querystring = {"thread_code": thread_code, "map_replies": "0"}
-    headers = {
-        "x-rapidapi-key": os.getenv('RAPIDAPI_KEY'),
-        "x-rapidapi-host": "threadsscraper.p.rapidapi.com"
-    }
-    
-    try:
-        response = requests.get(api_url, headers=headers, params=querystring)
-        json_data = response.json()
-        
-        items = json_data.get('data', [])
-        if not items:
-            return "這篇貼文沒有內容或抓取失敗"
-            
-        main_text = items[0].get('caption', {}).get('text', '無主文')
-        full_content = f"【Threads 主文】\n{main_text}\n\n"
-        
-        accessibility_caption = items[0].get('accessibility_caption')
-        if accessibility_caption:
-            full_content += f"【圖片隱藏描述】\n{accessibility_caption}\n\n"
-            
-        full_content += "【留言區】\n"
-        for item in items[1:]:
-            author = item.get('user', {}).get('username', '匿名')
-            comment_text = item.get('caption', {}).get('text', '')
-            if comment_text:
-                full_content += f"- 網友 {author} 說: {comment_text}\n"
-                
-        return full_content 
-
-    except Exception as e:
-        print(f"Threads 爬蟲發生錯誤: {e}")
-        return None
-
 load_dotenv()
 app = Flask(__name__)
 
@@ -113,7 +68,174 @@ def generate_google_maps_link(name, address):
     """
     search_keyword = f"{name} {address}".strip()
     encoded_keyword = urllib.parse.quote(search_keyword)
-    return f"https://www.google.com/maps/search/?api=1&query={encoded_keyword}"
+    return f"[https://www.google.com/maps/search/?api=1&query=](https://www.google.com/maps/search/?api=1&query=){encoded_keyword}"
+
+
+# ==========================================
+# 處理Instagram
+# ==========================================
+def handle_instagram(user_text):
+    match = re.search(r'/(?:p|reel|reels)/([^/?#&]+)', user_text)
+    if not match:
+        return "IG 網址格式錯誤，找不到代碼。"
+        
+    clean_url = user_text.split('?')[0] 
+    api_url = "[https://instagram-looter2.p.rapidapi.com/post](https://instagram-looter2.p.rapidapi.com/post)" 
+    querystring = {"url": clean_url} 
+    
+    headers = {
+        "x-rapidapi-key": os.getenv('RAPIDAPI_KEY'),
+        "x-rapidapi-host": "instagram-looter2.p.rapidapi.com", 
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        response = requests.get(api_url, headers=headers, params=querystring)
+        json_data = response.json()
+        
+        caption = ""
+        if "edge_media_to_caption" in json_data:
+            edges = json_data.get("edge_media_to_caption", {}).get("edges", [])
+            if edges:
+                caption = edges[0].get("node", {}).get("text", "")
+        
+        location_data = json_data.get("location", {})
+        extracted_place = extract_location_with_ai(caption)
+        
+        # JSON 解析與網址生成
+        if extracted_place and extracted_place != "[]":
+            try:
+                places = json.loads(extracted_place)
+                reply_text = "🤖 AI 為您找到以下地點：\n\n"
+                for p in places:
+                    name, address = p.get("name", ""), p.get("address", "")
+                    maps_url = generate_google_maps_link(name, address)
+                    reply_text += f"🍽️ {name}\n📍 {address}\n🗺️ 導航：\n{maps_url}\n\n"
+                return reply_text
+            except json.JSONDecodeError:
+                return "🤖 AI 回傳格式異常，無法產生連結。"
+        elif location_data and location_data.get('name'):
+            name = location_data['name']
+            maps_url = generate_google_maps_link(name, "")
+            return f"📍 從 IG 打卡地標找到：\n🍽️ {name}\n🗺️ 導航：\n{maps_url}"
+        else:
+            return "🤖 貼文好像沒有提到具體實體店面。"
+            
+    except Exception as e:
+        print(f"IG API Error: {e}")
+        return "IG 爬蟲發生錯誤，請檢查網路或 API 額度。"
+
+
+# ==========================================
+# 處理Threads
+# ==========================================
+def handle_threads(user_text):
+    match = re.search(r'/post/([^/?#&]+)', user_text)
+    if not match:
+        return "Threads 網址格式錯誤，找不到代碼。"
+        
+    thread_code = match.group(1)
+    api_url = "[https://threadsscraper.p.rapidapi.com/thread-comments](https://threadsscraper.p.rapidapi.com/thread-comments)"
+    querystring = {"thread_code": thread_code, "map_replies": "0"}
+    
+    headers = {
+        "x-rapidapi-key": os.getenv('RAPIDAPI_KEY'),
+        "x-rapidapi-host": "threadsscraper.p.rapidapi.com",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        response = requests.get(api_url, headers=headers, params=querystring)
+        items = response.json().get('data', [])
+        
+        if not items:
+            return "Threads 爬蟲找不到貼文資料或 API 失效。"
+            
+        main_post = items[0]
+        main_text = main_post.get('caption', {}).get('text', '無主文')
+        ocr_text = main_post.get('accessibility_caption', '')
+        ocr_text = f"【圖片辨識】\n{ocr_text}\n\n" if ocr_text else ""
+        
+        comments_text = "".join([f"- {i.get('user', {}).get('username', '匿名')}: {i.get('caption', {}).get('text', '')}\n" for i in items[1:] if i.get('caption', {}).get('text', '')])
+        
+        combined_info = f"【主文】\n{main_text}\n\n{ocr_text}【留言區】\n{comments_text}"
+        extracted_place = extract_location_with_ai(combined_info)
+        
+        if extracted_place and extracted_place != "[]":
+            try:
+                places = json.loads(extracted_place)
+                reply_text = "🤖 AI 為您找到以下地點：\n\n"
+                for p in places:
+                    name, address = p.get("name", ""), p.get("address", "")
+                    maps_url = generate_google_maps_link(name, address)
+                    reply_text += f"🍽️ {name}\n📍 {address}\n🗺️ 導航：\n{maps_url}\n\n"
+                return reply_text
+            except json.JSONDecodeError:
+                return "🤖 AI 回傳格式異常，無法產生連結。"
+        else:
+            return "🤖 貼文好像沒有提到具體實體店面。"
+            
+    except Exception as e:
+        print(f"Threads API Error: {e}")
+        return "Threads 爬蟲發生網路錯誤。"
+
+
+# ==========================================
+# 處理Facebook
+# ==========================================
+def handle_facebook(user_text):
+    match = re.search(r'(https?://[^\s]+(?:facebook\.com|fb\.com|fb\.watch)[^\s]+)', user_text)
+    if not match:
+        return "雖然看起來像 FB，但找不到完整的有效網址喔。"
+        
+    fb_url = match.group(1)
+    
+    api_url = "https://facebook-scraper-api4.p.rapidapi.com/get_facebook_post_details" 
+    querystring = {"link": fb_url} 
+    
+    headers = {
+        "x-rapidapi-key": os.getenv('RAPIDAPI_KEY'),
+        "x-rapidapi-host": "facebook-scraper-api4.p.rapidapi.com", 
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        response = requests.get(api_url, headers=headers, params=querystring)
+        # 注意：你的 API 回傳的是一個 List，所以要抓 [0]
+        data_list = response.json()
+        
+        if not data_list or len(data_list) == 0:
+            return "FB 爬蟲找不到這篇貼文資料。"
+            
+        post_data = data_list[0]
+        # 根據你的 JSON，內容藏在 values -> text
+        fb_text = post_data.get('values', {}).get('text', '')
+        
+        if not fb_text:
+            return "這篇貼文沒有文字內容，AI 無法分析。"
+            
+        combined_info = f"【Facebook 貼文】\n{fb_text}"
+        extracted_place = extract_location_with_ai(combined_info)
+        
+        # 解析 AI 結果
+        if extracted_place and extracted_place != "[]":
+            try:
+                places = json.loads(extracted_place)
+                reply_text = "🤖 AI 為您找到以下地點：\n\n"
+                for p in places:
+                    name, address = p.get("name", ""), p.get("address", "")
+                    maps_url = generate_google_maps_link(name, address)
+                    reply_text += f"🍽️ {name}\n📍 {address}\n🗺️ 導航：\n{maps_url}\n\n"
+                return reply_text
+            except json.JSONDecodeError:
+                return "🤖 AI 回傳格式異常，無法產生連結。"
+        else:
+            return "🤖 這篇 FB 貼文好像沒有提到具體實體店面。"
+            
+    except Exception as e:
+        print(f"FB API Error: {e}")
+        return "Facebook 爬蟲發生網路錯誤，或 API 額度用盡。"
+
 
 # ==========================================
 # 🌐 LINE Webhook
@@ -128,8 +250,9 @@ def callback():
         abort(400)
     return 'OK'
 
+
 # ==========================================
-# 🤖 處理使用者訊息 (IG & Threads 路由)
+# 🤖 處理使用者訊息 (總機 Router)
 # ==========================================
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
@@ -138,118 +261,21 @@ def handle_message(event):
 
     print(f"📥 收到來自使用者的訊息：{user_text}")
     
-    # ---------------------------
-    # 路線 A：Instagram 處理邏輯
-    # ---------------------------
+    # 根據網址特徵，將工作分派給對應的平台處理員
     if "instagram.com" in user_text:
-        match = re.search(r'/(?:p|reel|reels)/([^/?#&]+)', user_text)
-        if match:
-            clean_url = user_text.split('?')[0] 
-            api_url = "https://instagram-looter2.p.rapidapi.com/post" 
-            querystring = {"url": clean_url} 
-            
-            headers = {
-                "x-rapidapi-key": os.getenv('RAPIDAPI_KEY'),
-                "x-rapidapi-host": "instagram-looter2.p.rapidapi.com", 
-                "Content-Type": "application/json"
-            }
-            try:
-                response = requests.get(api_url, headers=headers, params=querystring)
-                json_data = response.json()
-                
-                caption = ""
-                if "edge_media_to_caption" in json_data:
-                    edges = json_data.get("edge_media_to_caption", {}).get("edges", [])
-                    if edges:
-                        caption = edges[0].get("node", {}).get("text", "")
-                
-                location_data = json_data.get("location", {})
-                extracted_place = extract_location_with_ai(caption)
-                
-                # JSON 解析與網址生成
-                if extracted_place and extracted_place != "[]":
-                    try:
-                        places = json.loads(extracted_place)
-                        reply_text = "🤖 AI 為您找到以下地點：\n\n"
-                        for p in places:
-                            name, address = p.get("name", ""), p.get("address", "")
-                            maps_url = generate_google_maps_link(name, address)
-                            reply_text += f"🍽️ {name}\n📍 {address}\n🗺️ 導航：\n{maps_url}\n\n"
-                    except json.JSONDecodeError:
-                        reply_text = "🤖 AI 回傳格式異常，無法產生連結。"
-                elif location_data and location_data.get('name'):
-                    name = location_data['name']
-                    maps_url = generate_google_maps_link(name, "")
-                    reply_text = f"📍 從 IG 打卡地標找到：\n🍽️ {name}\n🗺️ 導航：\n{maps_url}"
-                else:
-                    reply_text = "🤖 貼文好像沒有提到具體實體店面。"
-                    
-            except Exception as e:
-                reply_text = "IG 爬蟲發生錯誤，請檢查網路或 API 額度。"
-                print(f"API Error: {e}")
-        else:
-            reply_text = "IG 網址格式錯誤，找不到代碼。"
-
-    # ---------------------------
-    # 路線 B：Threads 處理邏輯
-    # ---------------------------
+        reply_text = handle_instagram(user_text)
+        
     elif "threads.net" in user_text or "threads.com" in user_text:
-        match = re.search(r'/post/([^/?#&]+)', user_text)
-        if match:
-            thread_code = match.group(1)
-            api_url = "https://threadsscraper.p.rapidapi.com/thread-comments"
-            querystring = {"thread_code": thread_code, "map_replies": "0"}
-            
-            headers = {
-                "x-rapidapi-key": os.getenv('RAPIDAPI_KEY'),
-                "x-rapidapi-host": "threadsscraper.p.rapidapi.com",
-                "Content-Type": "application/json"
-            }
-            
-            try:
-                response = requests.get(api_url, headers=headers, params=querystring)
-                items = response.json().get('data', [])
-                
-                if not items:
-                    reply_text = "Threads 爬蟲找不到貼文資料或 API 失效。"
-                else:
-                    main_post = items[0]
-                    main_text = main_post.get('caption', {}).get('text', '無主文')
-                    ocr_text = main_post.get('accessibility_caption', '')
-                    ocr_text = f"【圖片辨識】\n{ocr_text}\n\n" if ocr_text else ""
-                    
-                    comments_text = "".join([f"- {i.get('user', {}).get('username', '匿名')}: {i.get('caption', {}).get('text', '')}\n" for i in items[1:] if i.get('caption', {}).get('text', '')])
-                    
-                    combined_info = f"【主文】\n{main_text}\n\n{ocr_text}【留言區】\n{comments_text}"
-                    extracted_place = extract_location_with_ai(combined_info)
-                    
-                    # JSON 解析與網址生成
-                    if extracted_place and extracted_place != "[]":
-                        try:
-                            places = json.loads(extracted_place)
-                            reply_text = "🤖 AI 為您找到以下地點：\n\n"
-                            for p in places:
-                                name, address = p.get("name", ""), p.get("address", "")
-                                maps_url = generate_google_maps_link(name, address)
-                                reply_text += f"🍽️ {name}\n📍 {address}\n🗺️ 導航：\n{maps_url}\n\n"
-                        except json.JSONDecodeError:
-                            reply_text = "🤖 AI 回傳格式異常，無法產生連結。"
-                    else:
-                        reply_text = "🤖 貼文好像沒有提到具體實體店面。"
-                        
-            except Exception as e:
-                reply_text = "Threads 爬蟲發生網路錯誤。"
-                print(f"API Error: {e}")
-        else:
-            reply_text = "Threads 網址格式錯誤，找不到代碼。"
-
+        reply_text = handle_threads(user_text)
+        
+    elif "facebook.com" in user_text or "fb.com" in user_text or "fb.watch" in user_text:
+        reply_text = handle_facebook(user_text)
+        
     else:
-        # 如果不是 IG 也不是 Threads，直接結束處理
+        # 如果不是三大平台，直接結束處理
         return
 
-    # ==========================================
     # 📤 將最終結果回傳給 LINE 使用者
-    # ==========================================
     if reply_text:
         line_bot_api.reply_message(
             ReplyMessageRequest(
