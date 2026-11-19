@@ -140,6 +140,19 @@ python app.py
 
 接著需設定 LINE Webhook URL 指向可公開存取的服務端點，才能接收 LINE 訊息。
 
+## 實際畫面
+
+### 使用者分享貼文連結
+
+<img src="https://github.com/user-attachments/assets/5fb1626c-41b0-4890-b9aa-d2b0a542943a" width="300">
+<img src="https://github.com/user-attachments/assets/30f94d28-dda2-4ca1-981a-455fe8142481" width="300">
+
+### LINE BOT回傳Google Map連結
+
+<img src="https://github.com/user-attachments/assets/bc542c6c-6463-44f9-833b-4f2cf205ad4b" width="300">
+<img src="https://github.com/user-attachments/assets/aa20fd14-e56a-4d97-ba20-6223692a2623" width="300">
+
+
 ## 專案開發方式
 
 本專案由我負責產品構想、功能規劃、流程拆解及 API 整合，並運用 AI 協助逐步實作與調整。
