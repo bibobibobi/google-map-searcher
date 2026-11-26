@@ -1,16 +1,73 @@
-#  AI 社群美食導航員 (AI-Powered Restaurant Navigator Line Bot)
+# Google Map Searcher LINE Bot
 
-## 專案簡介 (Introduction)
-這是一個基於 Python 與 Flask 開發的 LINE Bot 應用程式。
-旨在解決社群媒體（Instagram, Threads）上美食貼文資訊碎片化、缺乏明確地址的痛點。透過整合社群平台 API 與 Google Gemini AI 模型，系統能自動從貼文的非結構化文字與圖片 OCR 辨識內容中，精準萃取實體店面資訊，並直接生成 Google Maps 導航連結。
+Flask-based LINE Bot that extracts places from Instagram, Threads, and Facebook content using Gemini and replies with Google Maps search links.
 
-## 核心功能 (Features)
-* **多平台網址解析**：支援自動識別並解析 Instagram (Posts/Reels) 與 Threads 的貼文網址。
-* **跨平台 API 整合**：透過 RapidAPI 介接第三方爬蟲服務，獲取貼文詳細資料，並能挖出隱藏在圖片無障礙標籤 (Accessibility Captions) 中的地標資訊。
-* **LLM 智慧資料萃取**：導入 Google Gemini 2.5 Flash 模型，將散落的碎化資訊（如：城市、店名片段、留言補充）進行 NLP 分析，精準重組出完整的地標名稱。
-* **即時地圖導航**：自動生成經過 URL Encoding 的安全 Google Maps 搜尋連結，解決通訊軟體斷開特殊字元網址的問題。
+## Configuration
 
-## 技術棧 (Tech Stack)
-* **後端開發**: Python 3, Flask
-* **平台串接**: LINE Messaging API
-* **AI 與資料處理**: Google Generative AI (Gemini SDK), JSON Parsing, 正規表達式 (Regex), RESTful API Integration
+The application calls `load_dotenv()` at startup, so local development reads a `.env` file in the project directory. Existing process environment variables take precedence over `.env` values (the default `python-dotenv` behavior).
+
+Create your local configuration from the example; never commit `.env` or place real secrets in `.env.example`.
+
+```bash
+cp .env.example .env
+```
+
+Required secrets:
+
+- `LINE_CHANNEL_ACCESS_TOKEN`
+- `LINE_CHANNEL_SECRET`
+- `GEMINI_API_KEY`
+- `RAPIDAPI_KEY`
+
+Listener settings:
+
+- `APP_HOST` defaults to `127.0.0.1`.
+- `APP_PORT` defaults to `5000`.
+
+For the production Nginx reverse-proxy layout, retain `APP_HOST=127.0.0.1` and `APP_PORT=5000`. Do not expose port 5000 publicly.
+
+## Local startup
+
+Use Python 3 and install the dependencies:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+python app.py
+```
+
+The default listener is `http://127.0.0.1:5000`. To override it for an isolated local test:
+
+```bash
+APP_HOST=127.0.0.1 APP_PORT=5050 python app.py
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:APP_HOST = '127.0.0.1'
+$env:APP_PORT = '5050'
+python app.py
+```
+
+## Oracle Cloud deployment layout
+
+Production location: `/home/ubuntu/google-map-searcher` on Ubuntu 22.04. The `linebot.service` systemd service runs the app, and Nginx configuration at `/etc/nginx/sites-available/linebot` proxies `/callback` to `http://127.0.0.1:5000`.
+
+1. Update application files and dependencies in `/home/ubuntu/google-map-searcher`.
+2. Keep production secrets in the existing private `.env` (or set them in `linebot.service` using `EnvironmentFile=`); do not commit it.
+3. Ensure the service supplies or inherits `APP_HOST=127.0.0.1` and `APP_PORT=5000`. These values must match Nginx's upstream.
+4. Verify the Nginx upstream remains `proxy_pass http://127.0.0.1:5000;` for `/callback`.
+5. After a planned release, validate configuration and restart in the normal operational window:
+
+   ```bash
+   sudo nginx -t
+   sudo systemctl restart linebot.service
+   sudo systemctl status linebot.service
+   sudo journalctl -u linebot.service -n 100 --no-pager
+   ```
+
+## Production note
+
+`app.run()` is Flask's development server and is not intended for robust public production serving. Its localhost binding and Nginx proxy reduce direct exposure, but it lacks a production WSGI server's concurrency, lifecycle, and resilience characteristics. A future hardening change should run the Flask app behind Gunicorn (or uWSGI) under systemd, leaving Nginx as the TLS/reverse-proxy endpoint. This change deliberately does not alter the current web server or service architecture.
