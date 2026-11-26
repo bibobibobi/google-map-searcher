@@ -15,6 +15,11 @@ from dotenv import load_dotenv
 load_dotenv()
 app = Flask(__name__)
 
+# Defaults bind the development server to the local interface. Set APP_HOST
+# and APP_PORT explicitly only when a different listener is required.
+APP_HOST = os.getenv('APP_HOST', '127.0.0.1')
+APP_PORT = int(os.getenv('APP_PORT', '5000'))
+
 # 初始化 LINE Bot 與 Gemini
 configuration = Configuration(access_token=os.getenv('LINE_CHANNEL_ACCESS_TOKEN'))
 api_client = ApiClient(configuration)
@@ -189,4 +194,4 @@ def handle_message(event):
     line_bot_api.reply_message(ReplyMessageRequest(reply_token=event.reply_token, messages=[TextMessage(text=reply)]))
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host=APP_HOST, port=APP_PORT)

@@ -66,9 +66,7 @@
 
 ### 2. 使用生成式 AI 處理非結構化資料
 
-社群貼文中的店家資訊不一定具有固定格式，可能散落在描述文字或其他上下文中。
-
-透過 Google Gemini 分析取得的貼文文字，要求模型以 JSON 格式回傳店家名稱及地址，讓後續程式能以結構化資料處理辨識結果。
+社群貼文中的店家資訊不一定具有固定格式，可能散落在描述文字或其他上下文中。透過 Google Gemini 分析取得的貼文文字，要求模型以 JSON 格式回傳店家名稱及地址，讓後續程式能以結構化資料處理辨識結果。
 
 ### 3. 自動產生地圖搜尋連結
 
@@ -80,7 +78,11 @@
 
 ## 環境設定
 
-本專案需要以下 API 金鑰：
+程式啟動時使用 `python-dotenv` 的 `load_dotenv()` 載入專案中的 `.env`；既有程序環境變數優先於 `.env` 中的值。請由範例建立自己的設定，並填入金鑰：
+
+```bash
+cp .env.example .env
+```
 
 | 環境變數 | 用途 |
 |---|---|
@@ -88,31 +90,18 @@
 | `LINE_CHANNEL_SECRET` | LINE Webhook 驗證 |
 | `GEMINI_API_KEY` | Google Gemini API |
 | `RAPIDAPI_KEY` | RapidAPI 存取金鑰 |
+| `APP_HOST` | Flask 監聽位址，預設 `127.0.0.1` |
+| `APP_PORT` | Flask 監聽埠，預設 `5000` |
 
-請建立 `.env` 檔案並填入自己的 API 金鑰：
-
-```env
-LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token
-LINE_CHANNEL_SECRET=your_line_channel_secret
-GEMINI_API_KEY=your_gemini_api_key
-RAPIDAPI_KEY=your_rapidapi_key
-```
+請勿提交 `.env`，也不要在 `.env.example` 填入真實金鑰。正式環境使用同機 Nginx 反向代理時，建議保留 `127.0.0.1:5000`，並避免對外開放 5000 埠。
 
 ## 本機執行
 
-### 環境需求
-
-- Python 3
-- LINE Messaging API Channel
-- Google Gemini API Key
-- RapidAPI Key
-
-### 安裝依賴套件
+需要 Python 3、LINE Messaging API Channel、Google Gemini API Key 及 RapidAPI Key。
 
 ```bash
 git clone https://github.com/bibobibobi/google-map-searcher.git
 cd google-map-searcher
-
 python -m venv venv
 ```
 
@@ -126,19 +115,46 @@ venv\Scripts\activate
 source venv/bin/activate
 ```
 
-安裝套件：
+安裝套件並在設定 `.env` 後啟動：
 
 ```bash
 pip install -r requirements.txt
-```
-
-設定 `.env` 後，啟動 Flask：
-
-```bash
 python app.py
 ```
 
-接著需設定 LINE Webhook URL 指向可公開存取的服務端點，才能接收 LINE 訊息。
+預設監聽 `http://127.0.0.1:5000`。例如在 macOS / Linux 暫時改用 5050 埠：
+
+```bash
+APP_HOST=127.0.0.1 APP_PORT=5050 python app.py
+```
+
+Windows PowerShell 可使用：
+
+```powershell
+$env:APP_HOST = '127.0.0.1'
+$env:APP_PORT = '5050'
+python app.py
+```
+
+LINE Webhook URL 需指向可公開存取的 `/callback` 端點，才能接收 LINE 訊息。
+
+## Oracle Cloud 部署
+
+正式環境為 Ubuntu 22.04，專案位於 `/home/ubuntu/google-map-searcher`，由 `linebot.service` 執行。Nginx 設定位於 `/etc/nginx/sites-available/linebot`，將 `/callback` 轉送至 `http://127.0.0.1:5000`。
+
+1. 依既有發布流程更新專案檔案與依賴套件。
+2. 將金鑰保留在私有 `.env`，或透過 systemd 的 `EnvironmentFile=` 提供；確認服務的 `APP_HOST=127.0.0.1`、`APP_PORT=5000` 與 Nginx 上游一致。
+3. 確認 `/callback` 的 Nginx 上游設定為 `proxy_pass http://127.0.0.1:5000;`。
+4. 在預定維護時段檢查設定、重啟服務並查看狀態：
+
+   ```bash
+   sudo nginx -t
+   sudo systemctl restart linebot.service
+   sudo systemctl status linebot.service
+   sudo journalctl -u linebot.service -n 100 --no-pager
+   ```
+
+目前 `app.run()` 使用 Flask 開發伺服器；loopback 綁定與 Nginx 代理可降低直接暴露，但正式環境仍建議未來改用 Gunicorn 或 uWSGI，搭配 systemd 管理程序，並保留 Nginx 處理 TLS 與反向代理。
 
 ## 實際畫面
 
@@ -147,11 +163,10 @@ python app.py
 <img src="https://github.com/user-attachments/assets/5fb1626c-41b0-4890-b9aa-d2b0a542943a" width="300">
 <img src="https://github.com/user-attachments/assets/30f94d28-dda2-4ca1-981a-455fe8142481" width="300">
 
-### LINE BOT回傳Google Map連結
+### LINE Bot 回傳 Google Maps 連結
 
 <img src="https://github.com/user-attachments/assets/bc542c6c-6463-44f9-833b-4f2cf205ad4b" width="300">
 <img src="https://github.com/user-attachments/assets/aa20fd14-e56a-4d97-ba20-6223692a2623" width="300">
-
 
 ## 專案開發方式
 

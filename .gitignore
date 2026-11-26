@@ -6,6 +6,7 @@ __pycache__/
 *.pyc
 
 # 隱藏虛擬環境資料夾
+.venv/
 venv/
 env/
 
